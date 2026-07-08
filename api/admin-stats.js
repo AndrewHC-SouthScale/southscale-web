@@ -14,23 +14,9 @@ export default async function handler(req, res) {
   const SERVICE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY
 
   if (!SUPABASE_URL || !SERVICE_KEY) {
-    return res.status(500).json({ error: 'Supabase not configured' })
+    return res.status(500).json({ error: 'Supabase not configured', hasUrl: !!SUPABASE_URL, hasKey: !!SERVICE_KEY })
   }
 
-  async function query(sql) {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/admin_query`, {
-      method: 'POST',
-      headers: {
-        'apikey': SERVICE_KEY,
-        'Authorization': `Bearer ${SERVICE_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ query: sql }),
-    })
-    return res.json()
-  }
-
-  // Use direct table queries via PostgREST instead of raw SQL
   async function get(path) {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
       headers: {
@@ -40,6 +26,11 @@ export default async function handler(req, res) {
         'Prefer': 'count=exact',
       },
     })
+    if (!r.ok) {
+      const text = await r.text()
+      console.error(`Supabase error on ${path}:`, r.status, text)
+      return { data: [], count: 0 }
+    }
     const count = r.headers.get('content-range')?.split('/')[1] || '0'
     const data = await r.json()
     return { data, count: parseInt(count) || (Array.isArray(data) ? data.length : 0) }
@@ -172,6 +163,6 @@ export default async function handler(req, res) {
     })
   } catch (err) {
     console.error('Admin stats error:', err)
-    return res.status(500).json({ error: 'Failed to fetch stats' })
+    return res.status(500).json({ error: err.message || 'Failed to fetch stats' })
   }
 }
