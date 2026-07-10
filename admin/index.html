@@ -195,7 +195,6 @@ let refreshTimer = null
 let countdownTimer = null
 let refreshSecondsLeft = 300
 
-const BYN = 'https://www.bynapp.online'
 const GITHUB_BACKLOG = 'https://raw.githubusercontent.com/SouthScale-HQ/byn-test/main/docs/backlog.md'
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
@@ -355,49 +354,6 @@ function renderStats(d) {
 }
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
-const COMPETITIONS = [
-  { key: 'epl',          name: 'Premier League',        icon: '⚽', route: `${BYN}/api/football-model` },
-  { key: 'laliga',       name: 'La Liga',               icon: '⚽', route: `${BYN}/api/football-model` },
-  { key: 'ucl',          name: 'Champions League',      icon: '⚽', route: `${BYN}/api/football-model` },
-  { key: 'fifa_wc',      name: 'FIFA WC 26',            icon: '⚽', route: `${BYN}/api/football-model` },
-  { key: 'euros',        name: 'Euros',                 icon: '⚽', route: `${BYN}/api/football-model` },
-  { key: 'nations_champ',name: 'Nations Championship',  icon: '🏉', route: `${BYN}/api/rugby-fixtures` },
-  { key: 'rugby_champ',  name: 'Rugby Championship',    icon: '🏉', route: `${BYN}/api/rugby-fixtures` },
-  { key: 'six_nations',  name: 'Six Nations',           icon: '🏉', route: `${BYN}/api/rugby-fixtures` },
-  { key: 'urc',          name: 'URC',                   icon: '🏉', route: `${BYN}/api/rugby-fixtures` },
-  { key: 'prem_rugby',   name: 'Premiership Rugby',     icon: '🏉', route: `${BYN}/api/rugby-fixtures` },
-  { key: 'super_rugby',  name: 'Super Rugby Pacific',   icon: '🏉', route: `${BYN}/api/rugby-fixtures` },
-  { key: 'rugby_wc',     name: 'Rugby World Cup',       icon: '🏉', route: `${BYN}/api/rugby-fixtures` },
-  { key: 'nfl',          name: 'NFL',                   icon: '🏈', route: `${BYN}/api/nfl-model` },
-  { key: 'tennis',       name: 'Wimbledon',             icon: '🎾', route: `${BYN}/api/tennis-model` },
-  { key: 'pga',          name: 'The Open',              icon: '⛳', route: `${BYN}/api/golf-model` },
-  { key: 'f1',           name: 'F1',                    icon: '🏎️', route: `${BYN}/api/f1-fixtures`, special: true },
-]
-
-async function fetchCompFixtures(comp) {
-  try {
-    const url = comp.special ? comp.route : `${comp.route}?competitionKey=${comp.key}`
-    const res = await fetch(url)
-    if (!res.ok) return { fixtures: [], nextFixtureDate: null }
-    const data = await res.json()
-
-    if (comp.special) {
-      // F1 format
-      return {
-        fixtures: data.race ? [{ name: data.race.name, kickoff: data.race.date }] : [],
-        nextFixtureDate: data.race?.date || null,
-      }
-    }
-
-    return {
-      fixtures: data.fixtures || [],
-      nextFixtureDate: data.nextFixture || data.nextFixtureDate || data.seasonOpens || data.fixtures?.[0]?.kickoff || null,
-      nextFixtureName: data.nextFixtureName || null,
-    }
-  } catch {
-    return { fixtures: [], nextFixtureDate: null }
-  }
-}
 
 function formatDate(iso) {
   if (!iso) return '—'
@@ -415,17 +371,22 @@ async function loadFixtures() {
   const container = document.getElementById('fixtures-table')
   container.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted)"><div class="spinner" style="margin:0 auto 8px"></div>Fetching all competition fixtures...</div>'
 
-  const results = await Promise.all(COMPETITIONS.map(async comp => {
-    const data = await fetchCompFixtures(comp)
-    return { comp, ...data }
-  }))
+  let results
+  try {
+    const res = await fetch('/api/admin-fixtures')
+    const data = await res.json()
+    results = data.competitions || []
+  } catch (err) {
+    container.innerHTML = `<div style="padding:24px;color:var(--red)">Failed to load fixtures: ${err.message}</div>`
+    return
+  }
 
   // Determine the effective "next date" for each competition
   const enriched = results.map(r => {
     const currentFixtureDate = r.fixtures[0]?.kickoff || null
     const nextDate = currentFixtureDate || r.nextFixtureDate || null
     const daysUntil = nextDate ? Math.round((new Date(nextDate) - new Date()) / (1000*60*60*24)) : null
-    return { ...r, nextDate, daysUntil }
+    return { ...r, comp: { key: r.key, name: r.name, icon: r.icon }, nextDate, daysUntil }
   })
 
   // Sort by next fixture date ascending (TBC/null last)
